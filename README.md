@@ -10,7 +10,8 @@ Objetivo: ver si la surgencia ocurre en pulsos cortos y estimar cuánto duran, c
 - **Satélite:** GOES-16. Fue GOES-East hasta abril de 2025 (GOES-19 se lanzó en 2024 y no tiene datos de 2023).
 - **Resolución temporal:** la TSM de nivel 2 se publica cada hora, no hay producto de 30 minutos. Para bajar menos archivos, cambia `PASO_HORAS` en `src/config.py`.
 - **Calidad:** solo se usan los píxeles con `DQF == 0` (buena calidad). Las nubes dejan huecos.
-- **Periodo por defecto:** 2023-02-06 a 2023-02-12 (época seca, con alisios fuertes).
+- **Periodo por defecto:** enero y febrero de 2023 (época seca, con alisios fuertes).
+- **Solo noche:** se descargan las horas de 00 a 06 h local (05–10 UTC), unos 354 archivos. Así se evita el calentamiento diurno, que en la tarde sube la TSM costera hasta ~1 °C y se confunde con un pulso. Se cambia con `HORAS_DESCARGA_UTC` en `src/config.py`.
 
 El script lee por rangos solo la ventana del dominio, así que no baja el disco completo.
 
@@ -18,27 +19,40 @@ El script lee por rangos solo la ventana del dominio, así que no baja el disco 
 
 | Área | Lon | Lat |
 |---|---|---|
-| Núcleo Guajira (Gutiérrez Leones et al. 2015) | 72.7–71.6 W | 11.7–12.6 N |
+| Núcleo Guajira (lengua fría al W del Cabo de la Vela) | 72.9–72.1 W | 11.8–12.5 N |
 | Riohacha (franja costera occidental) | 73.6–72.7 W | 11.2–11.9 N |
-| Referencia oceánica | 73.0–72.0 W | 13.0–13.6 N |
+| Referencia oceánica (fuera de filamentos fríos) | 75.0–74.0 W | 13.2–13.9 N |
+
+`figuras/mapa_areas.png` muestra el recorte y las cajas.
 
 Se editan en `src/config.py`.
 
 ## Uso (Codespace)
 
 ```bash
-# el Codespace instala las dependencias solo; si no:
-pip install -r requirements.txt
+pip install -r requirements.txt   # si el Codespace no lo hizo solo
 
-python src/descargar_goes.py      # recorta y guarda data/sst_YYYYmmdd_HH.nc
-python src/analizar.py            # mapas + series
-python src/analizar.py --sin-horarios   # solo mapas diarios + series
+python src/descargar_goes.py              # recorta y guarda data/sst_YYYYmmdd_HH.nc
+python src/analizar.py                    # mapas diarios + series + eventos
+python src/analizar.py --sin-mapas        # solo series y eventos (rápido)
+python src/analizar.py --horarios         # además un mapa por hora
 ```
+
+## Método
+
+1. **Compuesto nocturno diario:** media por píxel de las horas de 00 a 06 h local.
+2. **Control de calidad:** si en una caja hay menos de `MIN_COBERTURA` (25%) de píxeles de mar con dato, ese día se descarta. El mar se define como los píxeles que tuvieron dato al menos una vez en el periodo.
+3. **Índice de surgencia:** ΔT = TSM(costa) − TSM(referencia oceánica). Más negativo significa surgencia más intensa.
+4. **Fondo:** mediana móvil centrada de `VENTANA_FONDO_DIAS` (15) días. Representa el estado "normal" de la surgencia.
+5. **Pulsos:** días seguidos en que la anomalía (ΔT − fondo) supera ±`UMBRAL_PULSO` (0,5 °C).
+   - **Relajación:** ΔT sube; la surgencia se debilita.
+   - **Intensificación:** ΔT baja; la surgencia se intensifica.
+
+   Los huecos por nubes de hasta 1 día se interpolan para no cortar un evento, pero no cuentan si caen en los bordes. La resolución de la duración es de 1 día.
 
 ## Salidas (`figuras/`)
 
-- `horarios/mapa_*.png`: TSM de cada hora con isotermas cada 0,5 °C y las áreas.
-- `diarios/mapa_*.png`: compuesto diario (media de las horas válidas).
-- `series_areas.png` / `.csv`: TSM media por área y ΔT costa − océano, horaria y diaria. Un pulso de surgencia aparece como una caída de ΔT. Su duración se lee directamente en la serie.
-
-Las isotermas se trazan sobre un campo suavizado 5×5 (ignorando NaN) para reducir el ruido de píxel. El color muestra el dato original.
+- `series_areas.png`: TSM nocturna por área y, para cada zona costera, ΔT con su fondo, la banda de ±0,5 °C y los eventos sombreados (naranja = relajación, azul = intensificación).
+- `eventos.csv`: un evento por fila, con área, tipo, inicio, fin, duración en días, anomalía máxima y días interpolados.
+- `series_noche_diaria.csv`: series diarias, cobertura, fondo y anomalía.
+- `diarios/mapa_*.png`: compuesto nocturno de cada día con isotermas cada 0,5 °C y las áreas. Las isotermas se trazan sobre un campo suavizado 5×5.

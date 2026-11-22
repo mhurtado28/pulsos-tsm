@@ -1,8 +1,8 @@
 """Configuracion comun: periodo, dominio y areas de analisis."""
 
-# Semana de febrero de 2023 (epoca seca, alisios fuertes -> surgencia activa)
-FECHA_INICIO = "2023-02-06"
-FECHA_FIN = "2023-02-12"          # inclusive
+# Enero-febrero 2023 (epoca seca, alisios fuertes -> surgencia activa)
+FECHA_INICIO = "2023-01-01"
+FECHA_FIN = "2023-02-28"          # inclusive
 SATELITE = "goes16"              # GOES-East en 2023 (GOES-19 se lanzo en 2024)
 PRODUCTO = "ABI-L2-SSTF"         # TSM Full Disk, horaria, ~2 km
 PASO_HORAS = 1                   # 1 = todas las horas; 2 o 3 para bajar menos
@@ -31,6 +31,17 @@ TSM_RANGO = (23.0, 28.5)
 
 # Horas nocturnas (UTC) para evitar el calentamiento diurno: 00-06 h local (UTC-5)
 HORAS_NOCHE_UTC = (5, 6, 7, 8, 9, 10)
+# Horas que se descargan (None = todas). Por defecto solo la noche: 6 archivos/dia
+HORAS_DESCARGA_UTC = HORAS_NOCHE_UTC
+
+# Control de calidad del compuesto nocturno diario: fraccion minima de pixeles de
+# mar con dato en la caja (mar = pixeles con dato al menos una vez en el periodo)
+MIN_COBERTURA = 0.25
+
+# Deteccion de pulsos sobre dT (costa - referencia), compuesto nocturno diario
+VENTANA_FONDO_DIAS = 15     # mediana movil centrada = estado "normal" de la surgencia
+UMBRAL_PULSO = 0.5          # grados C de anomalia respecto al fondo
+MAX_HUECO_DIAS = 1          # huecos (nubes) de hasta 1 dia se interpolan para detectar
 
 DATA_DIR = "data"
 FIG_DIR = "figuras"

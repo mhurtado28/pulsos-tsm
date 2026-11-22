@@ -1,14 +1,19 @@
 """Mapas con isolineas y series de tiempo por area.
 
+Trabaja solo con horas nocturnas (00-06 h local) para evitar el calentamiento
+diurno, y arma un compuesto nocturno por dia.
+
 Genera en figuras/:
-  - horarios/mapa_YYYYmmdd_HH.png   mapa de cada hora con isotermas y areas
-  - diarios/mapa_YYYYmmdd.png       compuesto diario (media de horas validas)
-  - series_areas.png                TSM media por area + diferencia costa-oceano
-  - series_areas.csv                los mismos datos en tabla
+  - diarios/mapa_YYYYmmdd.png       compuesto nocturno diario con isotermas y areas
+  - series_areas.png                TSM por area, dT costa-referencia, fondo y eventos
+  - series_noche_diaria.csv         series diarias, cobertura, fondo y anomalias
+  - eventos.csv                     pulsos detectados: tipo, inicio, fin, duracion
+  - horarios/ (solo con --horarios) un mapa por hora
 
 Uso:
-    python src/analizar.py            # todo
-    python src/analizar.py --sin-horarios
+    python src/analizar.py
+    python src/analizar.py --sin-mapas     # solo series y eventos (rapido)
+    python src/analizar.py --horarios
 """
 import argparse
 import glob
@@ -89,80 +94,132 @@ def mapa(sst2d, lat, lon, titulo, salida):
     plt.close(fig)
 
 
-def media_area(ds, caja):
+def cobertura_y_media(campo, mar, caja, lat, lon):
+    """Media de la caja y fraccion de pixeles de mar con dato."""
     lo0, lo1, la0, la1 = caja
-    m = (ds.lon >= lo0) & (ds.lon <= lo1) & (ds.lat >= la0) & (ds.lat <= la1)
-    v = ds["sst"].where(m)
-    return v.mean(("y", "x")), np.isfinite(v).sum(("y", "x")) / m.sum()
+    m = (lon >= lo0) & (lon <= lo1) & (lat >= la0) & (lat <= la1) & mar
+    v = campo.where(m)
+    return v.mean(("y", "x")).values, (np.isfinite(v).sum(("y", "x")) / m.sum()).values
 
 
-def series(ds):
+def detectar(serie, fondo):
+    """Eventos donde la anomalia (serie - fondo) supera +/- UMBRAL_PULSO.
+
+    relajacion:      dT sube (surgencia mas debil que lo normal)
+    intensificacion: dT baja (surgencia mas fuerte que lo normal)
+    """
+    anom = (serie - fondo).interpolate(limit=C.MAX_HUECO_DIAS, limit_area="inside")
+    eventos = []
+    for tipo, signo in (("relajacion", 1), ("intensificacion", -1)):
+        activo = (signo * anom) > C.UMBRAL_PULSO
+        grupo = (activo != activo.shift()).cumsum()
+        for _, g in anom[activo].groupby(grupo[activo]):
+            obs = serie.loc[g.index].notna()          # recorta dias interpolados en los bordes
+            if not obs.any():
+                continue
+            g = g.loc[obs.idxmax():obs[::-1].idxmax()]
+            eventos.append({
+                "tipo": tipo,
+                "inicio": g.index[0].date(),
+                "fin": g.index[-1].date(),
+                "duracion_dias": len(g),
+                "anomalia_max_C": round(float(signo * (signo * g).max()), 2),
+                "dias_interpolados": int(serie.loc[g.index].isna().sum()),
+            })
+    return anom, eventos
+
+
+def series(diario, lat, lon):
+    mar = np.isfinite(diario).any("time")
     tabla = {}
     for nombre, caja in C.AREAS.items():
-        media, frac = media_area(ds, caja)
-        tabla[nombre] = media.values
-        tabla[f"{nombre} (frac. valida)"] = frac.values  # incluye tierra en el denominador
-    df = pd.DataFrame(tabla, index=pd.to_datetime(ds.time.values))
+        media, cob = cobertura_y_media(diario, mar, caja, lat, lon)
+        tabla[nombre] = media
+        tabla[f"cob {nombre}"] = cob
+    df = pd.DataFrame(tabla, index=pd.to_datetime(diario.time.values))
     ref = "Referencia oceanica"
-    for nombre in C.AREAS:
-        if nombre != ref:
-            df[f"dT {nombre} - ref"] = df[nombre] - df[ref]
-    df.to_csv(os.path.join(C.FIG_DIR, "series_areas.csv"), float_format="%.3f")
+    costas = [n for n in C.AREAS if n != ref]
+    for nombre in C.AREAS:  # control de calidad por cobertura
+        df.loc[df[f"cob {nombre}"] < C.MIN_COBERTURA, nombre] = np.nan
 
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+    todos = []
+    for n in costas:
+        dT = df[n] - df[ref]
+        fondo = dT.rolling(C.VENTANA_FONDO_DIAS, center=True, min_periods=5).median()
+        anom, ev = detectar(dT, fondo)
+        df[f"dT {n}"], df[f"fondo {n}"], df[f"anom {n}"] = dT, fondo, anom
+        todos += [{"area": n, **e} for e in ev]
+    eventos = pd.DataFrame(todos)
+    df.to_csv(os.path.join(C.FIG_DIR, "series_noche_diaria.csv"), float_format="%.3f")
+    eventos.to_csv(os.path.join(C.FIG_DIR, "eventos.csv"), index=False)
+
+    fig, axs = plt.subplots(1 + len(costas), 1, figsize=(12, 3.2 * (1 + len(costas))), sharex=True)
     for nombre, col in zip(C.AREAS, COLORES):
-        a1.plot(df.index, df[nombre], ".-", color=col, ms=3, lw=0.8, label=nombre)
-        d = df[nombre].resample("1D").mean()
-        d.index = d.index + pd.Timedelta("12h")
-        a1.plot(d, "o-", color=col, lw=2, ms=5, alpha=0.6)
-    a1.set_ylabel("TSM media (°C)")
-    a1.legend(fontsize=8)
-    a1.set_title("TSM horaria (puntos) y media diaria (línea gruesa) por área")
-    noche = df[df.index.hour.isin(C.HORAS_NOCHE_UTC)].resample("1D").mean()
-    noche.index = noche.index + pd.Timedelta("8h")  # centro de la ventana nocturna (08 UTC)
-    for c, col in zip([c for c in df.columns if c.startswith("dT")], COLORES):
-        a2.plot(df.index, df[c], ".-", color=col, ms=2, lw=0.6, alpha=0.5, label=f"{c} (horario)")
-        a2.plot(noche.index, noche[c], "s-", color=col, lw=2, ms=6,
-                label=f"{c} (noche 00-06 h local)")
-    a2.axhline(0, color="k", lw=0.5)
-    a2.set_ylabel("ΔT costa − océano (°C)")
-    a2.legend(fontsize=7, ncol=2)
-    a2.set_title("Índice de surgencia por TSM (más negativo = surgencia más intensa)")
+        axs[0].plot(df.index, df[nombre], "o-", color=col, ms=3, lw=1.2, label=nombre)
+    axs[0].set_ylabel("TSM (°C)")
+    axs[0].legend(fontsize=8, ncol=3)
+    axs[0].set_title("TSM nocturna (00–06 h local), compuesto diario por área")
+    for ax, n, col in zip(axs[1:], costas, COLORES):
+        ax.plot(df.index, df[f"dT {n}"], "o-", color=col, ms=3, lw=1.2, label="ΔT costa − ref")
+        ax.plot(df.index, df[f"fondo {n}"], "k--", lw=1,
+                label=f"fondo (mediana {C.VENTANA_FONDO_DIAS} d)")
+        ax.fill_between(df.index, df[f"fondo {n}"] - C.UMBRAL_PULSO,
+                        df[f"fondo {n}"] + C.UMBRAL_PULSO, color="0.85",
+                        label=f"± {C.UMBRAL_PULSO} °C")
+        if len(eventos):
+            for _, e in eventos[eventos.area == n].iterrows():
+                c = "#f4a582" if e.tipo == "relajacion" else "#92c5de"
+                ax.axvspan(pd.Timestamp(e.inicio) - pd.Timedelta("12h"),
+                           pd.Timestamp(e.fin) + pd.Timedelta("12h"), color=c, alpha=0.5)
+        ax.set_ylabel("ΔT (°C)")
+        ax.set_title(f"{n}: naranja = relajación, azul = intensificación")
+        ax.legend(fontsize=7, loc="lower left")
     fig.autofmt_xdate()
     fig.savefig(os.path.join(C.FIG_DIR, "series_areas.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
-    noche.to_csv(os.path.join(C.FIG_DIR, "series_noche_diaria.csv"), float_format="%.3f")
-    return df, noche
+    return df, eventos
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sin-horarios", action="store_true")
+    ap.add_argument("--horarios", action="store_true", help="tambien un mapa por cada hora")
+    ap.add_argument("--sin-mapas", action="store_true", help="solo series y eventos")
+    ap.add_argument("--sin-horarios", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     ds = cargar()
-    lat, lon = ds.lat.values, ds.lon.values
+    ds = ds.sel(time=pd.to_datetime(ds.time.values).hour.isin(C.HORAS_NOCHE_UTC))
+    lat, lon = ds.lat, ds.lon
     for sub in ("horarios", "diarios"):
         os.makedirs(os.path.join(C.FIG_DIR, sub), exist_ok=True)
 
-    if not args.sin_horarios:
+    if args.horarios:
         for t in ds.time.values:
             ts = pd.Timestamp(t)
-            mapa(ds.sst.sel(time=t).values, lat, lon, f"GOES-16 TSM {ts:%Y-%m-%d %H} UTC",
+            mapa(ds.sst.sel(time=t).values, lat.values, lon.values,
+                 f"GOES-16 TSM {ts:%Y-%m-%d %H} UTC",
                  os.path.join(C.FIG_DIR, "horarios", f"mapa_{ts:%Y%m%d_%H}.png"))
 
     diario = ds.sst.resample(time="1D").mean()
-    for t in diario.time.values:
-        ts = pd.Timestamp(t)
-        mapa(diario.sel(time=t).values, lat, lon, f"GOES-16 TSM media diaria {ts:%Y-%m-%d}",
-             os.path.join(C.FIG_DIR, "diarios", f"mapa_{ts:%Y%m%d}.png"))
+    if not args.sin_mapas:
+        for t in diario.time.values:
+            ts = pd.Timestamp(t)
+            mapa(diario.sel(time=t).values, lat.values, lon.values,
+                 f"GOES-16 TSM nocturna {ts:%Y-%m-%d}",
+                 os.path.join(C.FIG_DIR, "diarios", f"mapa_{ts:%Y%m%d}.png"))
 
-    df, noche = series(ds)
-    cols = [c for c in df.columns if "frac" not in c]
-    print("Media diaria (todas las horas):")
-    print(df[cols].resample("1D").mean().round(2).to_string())
-    print("\nMedia diaria solo noche (00-06 h local):")
-    print(noche[cols].round(2).to_string())
+    df, eventos = series(diario, lat, lon)
+    print(f"Dias: {len(df)}  |  descartados por nubes (cob < {C.MIN_COBERTURA:.0%}):")
+    for n in C.AREAS:
+        print(f"   {n}: {int(df[n].isna().sum())}")
+    if len(eventos):
+        print("\nEventos detectados:")
+        print(eventos.to_string(index=False))
+        print("\nResumen por area y tipo (duracion en dias):")
+        print(eventos.groupby(["area", "tipo"])["duracion_dias"]
+              .agg(["count", "mean", "min", "max"]).round(1).to_string())
+    else:
+        print("\nNo se detectaron eventos con el umbral actual.")
 
 
 if __name__ == "__main__":
