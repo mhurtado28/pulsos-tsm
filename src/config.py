@@ -12,14 +12,14 @@ DOMINIO = (-75.5, -70.5, 10.0, 14.0)
 
 # Areas donde se esperan cambios (lon_min, lon_max, lat_min, lat_max)
 AREAS = {
-    # Nucleo de surgencia al W del Cabo de la Vela, solo mar
-    # (lengua fria < 23 C en los mapas de feb 2023)
-    "Nucleo Guajira": (-72.9, -72.1, 11.8, 12.5),
+    # Nucleo de surgencia: desde la lengua fria al W del Cabo de la Vela hasta
+    # pasar Punta Gallinas, con mas mar al norte (~3200 pixeles de mar)
+    "Nucleo Guajira": (-72.9, -71.3, 11.8, 12.8),
     # Franja costera occidental Riohacha-Palomino
     "Riohacha": (-73.6, -72.7, 11.2, 11.9),
-    # Referencia oceanica: al NW, fuera de la lengua y los filamentos frios
-    # (la caja anterior, 73-72 W / 13-13.6 N, quedaba dentro de un filamento)
-    "Referencia oceanica": (-75.0, -74.0, 13.2, 13.9),
+    # Referencia oceanica: al NW, fuera de la lengua y los filamentos frios,
+    # con un numero de pixeles de mar similar al nucleo (~3300)
+    "Referencia oceanica": (-75.3, -74.0, 13.1, 14.0),
 }
 
 # Calidad: DQF == 0 es "good quality" en ABI-L2-SST

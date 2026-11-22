@@ -17,11 +17,13 @@ El script lee por rangos solo la ventana del dominio, así que no baja el disco 
 
 ## Áreas
 
-| Área | Lon | Lat |
-|---|---|---|
-| Núcleo Guajira (lengua fría al W del Cabo de la Vela) | 72.9–72.1 W | 11.8–12.5 N |
-| Riohacha (franja costera occidental) | 73.6–72.7 W | 11.2–11.9 N |
-| Referencia oceánica (fuera de filamentos fríos) | 75.0–74.0 W | 13.2–13.9 N |
+| Área | Lon | Lat | Píxeles de mar (aprox.) |
+|---|---|---|---|
+| Núcleo Guajira (Cabo de la Vela hasta pasar Punta Gallinas) | 72.9–71.3 W | 11.8–12.8 N | ~3200 |
+| Riohacha (franja costera occidental) | 73.6–72.7 W | 11.2–11.9 N | ~1200 |
+| Referencia oceánica (fuera de filamentos fríos) | 75.3–74.0 W | 13.1–14.0 N | ~3300 |
+
+Las cajas son una elección de trabajo, no vienen de la literatura (la primera versión del núcleo seguía a Gutiérrez Leones et al. 2015). El núcleo y la referencia tienen un número parecido de píxeles de mar para que el ruido de sus promedios sea comparable.
 
 `figuras/mapa_areas.png` muestra el recorte y las cajas.
 
