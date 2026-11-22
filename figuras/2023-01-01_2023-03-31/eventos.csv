@@ -1,0 +1,7 @@
+area,tipo,inicio,fin,duracion_dias,anomalia_max_C,dias_interpolados
+Nucleo Guajira,relajacion,2023-02-06,2023-02-06,1,0.57,0
+Riohacha,relajacion,2023-03-03,2023-03-03,1,0.54,0
+Riohacha,relajacion,2023-03-05,2023-03-06,2,0.66,0
+Riohacha,intensificacion,2023-02-04,2023-02-04,1,-0.57,0
+Riohacha,intensificacion,2023-03-04,2023-03-04,1,-1.0,0
+Riohacha,intensificacion,2023-03-28,2023-03-28,1,-0.51,0
