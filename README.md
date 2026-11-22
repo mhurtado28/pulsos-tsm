@@ -58,28 +58,29 @@ La descarga corre 8 procesos en paralelo (`DESCARGAS_PARALELAS` en `config.py`) 
 - **Diaria:** `diaria_<inicio>_<fin>.gif`, un cuadro por día del compuesto nocturno.
 - **Horaria, una por cambio relevante:** `horaria_<tipo>_<area>_<fecha>.gif`. Los cambios se toman de `eventos.csv` y de los saltos de ΔT entre días seguidos mayores de 0,4 °C. Primero entran los eventos detectados, ordenados por magnitud. Después entran los saltos cuya ventana no se solape con ningún evento ya elegido. Se dejan como máximo 4.
   - Para cada uno se descargan **todas** las horas desde 2 días antes hasta 2 días después del evento.
-  - Cada cuadro muestra el mapa de esa hora y, abajo, la serie horaria de ΔT con el instante marcado.
+  - Cada cuadro muestra el mapa de esa hora y, abajo, la TSM promedio horaria de las tres áreas con el instante marcado.
+  - En eventos de más de 3 días se anima solo el inicio, que es cuando ocurre el cambio.
   - En gris se marcan las horas nocturnas. Durante el día la TSM costera sube por calentamiento diurno, así que las subidas de la tarde no son pulsos.
 
 ## Método
 
 1. **Compuesto nocturno diario:** media por píxel de las horas de 00 a 06 h local, solo con píxeles de buena calidad (`DQF = 0`).
 2. **Control de calidad:** si en una caja hay menos de `MIN_COBERTURA` (25%) de píxeles de mar con dato, ese día se descarta. El mar se define como los píxeles que tuvieron dato al menos una vez en el periodo.
-3. **Dos índices de surgencia por zona costera:**
-   - **media:** ΔT = media(costa) − media(referencia).
-   - **p10:** ΔT = percentil 10(costa) − media(referencia). Representa el agua más fría de la caja, la del núcleo, y depende menos de cuánta agua cálida entre en la caja.
+3. **Serie de cada área costera** (`SERIE = "tsm"`, por defecto): la TSM promedio del área, con dos versiones:
+   - **media:** promedio de los píxeles de mar con dato.
+   - **p10:** percentil 10, es decir, la temperatura del agua más fría del área.
 
-   Más negativo significa surgencia más intensa.
+   La referencia oceánica se grafica al lado para ver si toda la región se calienta o se enfría al mismo tiempo. Con `SERIE = "dT"` se usa en cambio la diferencia costa − referencia.
 4. **Fondo:** mediana de los `VENTANA_FONDO_DIAS` (31) días **anteriores**, sin incluir el día (`TIPO_FONDO = "previo"`). Cada día se compara con el estado del mes previo. Así se detectan también relajaciones largas (1–2 semanas) y las que ocurren al final del periodo. Los primeros 7 días del periodo no tienen fondo. La opción `"centrado"` usa una mediana centrada, pero esa absorbe los eventos largos.
-5. **Pulsos:** al menos `MIN_DIAS_EVENTO` (2) días seguidos en que la anomalía (ΔT − fondo) supera ±`UMBRAL_PULSO` (0,5 °C).
-   - **Relajación:** ΔT sube; la surgencia se debilita.
-   - **Intensificación:** ΔT baja; la surgencia se intensifica.
+5. **Pulsos:** al menos `MIN_DIAS_EVENTO` (2) días seguidos en que la anomalía (serie − fondo) supera ±`UMBRAL_PULSO` (0,5 °C).
+   - **Relajación:** la TSM del área sube; la surgencia se debilita.
+   - **Intensificación:** la TSM del área baja; la surgencia se intensifica.
 
    Los huecos por nubes de hasta 1 día se interpolan para no cortar un evento, pero no cuentan si caen en los bordes. La resolución de la duración es de 1 día.
 
 ## Salidas (`figuras/<inicio>_<fin>/`)
 
-- `series_areas.png`: TSM nocturna por área (media y P10) y, para cada zona costera y cada índice, ΔT con su fondo, la banda de ±0,5 °C y los eventos sombreados (naranja = relajación, azul = intensificación).
+- `series_areas.png`: TSM nocturna por área (media y P10) y, para cada zona costera y cada versión, la serie con su fondo, la banda de ±0,5 °C y los eventos sombreados (naranja = relajación, azul = intensificación).
 - `eventos.csv`: un evento por fila, con área, índice, tipo, inicio, fin, duración en días, anomalía máxima y días interpolados.
 - `series_noche_diaria.csv`: series diarias, cobertura, fondo y anomalía.
 - `diarios/mapa_*.png`: compuesto nocturno de cada día con isotermas cada 0,5 °C y las áreas. Las isotermas se trazan sobre un campo suavizado 5×5.

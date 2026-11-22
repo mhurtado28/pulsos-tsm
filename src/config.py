@@ -39,7 +39,11 @@ HORAS_DESCARGA_UTC = HORAS_NOCHE_UTC
 # mar con dato en la caja (mar = pixeles con dato al menos una vez en el periodo)
 MIN_COBERTURA = 0.25
 
-# Deteccion de pulsos sobre dT (costa - referencia), compuesto nocturno diario
+# Serie usada para detectar pulsos (compuesto nocturno diario):
+#   "tsm": TSM promedio de cada area costera (sube = relajacion, baja = intensificacion)
+#   "dT":  TSM costa - TSM referencia oceanica
+SERIE = "tsm"
+# Deteccion de pulsos
 VENTANA_FONDO_DIAS = 31     # dias usados para el estado "normal" de la surgencia
 TIPO_FONDO = "previo"       # "previo": mediana de los 31 dias anteriores; "centrado"
 MIN_DIAS_EVENTO = 2         # dias seguidos minimos para contar un evento

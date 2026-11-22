@@ -3,11 +3,11 @@
 1) Diaria: un cuadro por dia (compuesto nocturno 00-06 h local), todo el periodo.
 2) Horaria: una animacion por cada cambio relevante. Para cada uno descarga TODAS
    las horas de la ventana (no solo la noche) y muestra el mapa hora a hora junto
-   con la serie horaria de dT costa - referencia.
+   con la serie horaria de TSM promedio de cada area.
 
 Cambios relevantes (maximo N_EVENTOS_HORARIOS, sin ventanas solapadas):
   - eventos de figuras/eventos.csv (relajacion / intensificacion, de analizar.py)
-  - saltos de dT de un dia al siguiente mayores que SALTO_MIN_C en
+  - saltos de la serie diaria de un dia al siguiente mayores que SALTO_MIN_C en
     figuras/series_noche_diaria.csv
 
 Uso:
@@ -38,7 +38,8 @@ import descargar_goes as D  # noqa: E402
 
 N_EVENTOS_HORARIOS = 4      # maximo de animaciones horarias
 DIAS_ANTES_DESPUES = 2      # dias de contexto alrededor de cada evento
-SALTO_MIN_C = 0.4           # salto diario minimo de dT para contar como cambio relevante
+MAX_DIAS_EVENTO_ANIM = 3    # en eventos largos se anima solo el inicio (cuando ocurre el cambio)
+SALTO_MIN_C = 0.4           # salto diario minimo de la serie para contar como cambio relevante
 MS_DIARIO = 600             # milisegundos por cuadro
 MS_HORARIO = 250
 DPI = 72
@@ -93,8 +94,8 @@ def cambios_relevantes():
     f_se = os.path.join(C.FIG_DIR, "series_noche_diaria.csv")
     if os.path.exists(f_se):
         df = pd.read_csv(f_se, index_col=0, parse_dates=True)
-        for col in [c for c in df.columns if c.startswith("dT ") and "p10" not in c]:
-            area = col[3:]
+        for col in [c for c in df.columns if c.startswith("serie ") and "p10" not in c]:
+            area = col[6:]
             salto = df[col].diff()
             for t, v in salto[salto.abs() > SALTO_MIN_C].items():
                 tipo = "salto_relajacion" if v > 0 else "salto_intensificacion"
@@ -103,7 +104,9 @@ def cambios_relevantes():
     # primero los eventos detectados, luego los saltos; se descarta todo cambio cuya
     # ventana se solape (+/- DIAS_ANTES_DESPUES) con uno ya elegido
     margen = pd.Timedelta(days=DIAS_ANTES_DESPUES)
-    eventos = sorted([c for c in cambios if not c[0].startswith("salto")], key=lambda c: -c[4])
+    # entre eventos, primero los del indice media (el p10 suele repetir el mismo evento)
+    eventos = sorted([c for c in cambios if not c[0].startswith("salto")],
+                     key=lambda c: (c[0].endswith("_p10"), -c[4]))
     saltos = sorted([c for c in cambios if c[0].startswith("salto")], key=lambda c: -c[4])
     elegidos = []
     for c in eventos + saltos:
@@ -115,7 +118,7 @@ def cambios_relevantes():
 
 
 def series_horarias(ds):
-    """dT horario costa - referencia, y TSM por area."""
+    """TSM promedio horaria por area (y dT costa - referencia si SERIE == "dT")."""
     mar = np.isfinite(ds.sst).any("time")
     tabla = {}
     for nombre, caja in C.AREAS.items():
@@ -139,7 +142,11 @@ def cuadro_horario(sst2d, lat, lon, t, df, evento, salida):
     cax = fig.add_axes([0.91, 0.40, 0.02, 0.48])
     fig.colorbar(pc, cax=cax, label="TSM (°C)")
     a2 = fig.add_axes([0.08, 0.05, 0.84, 0.22])
-    for n, col in zip([c for c in df.columns if c.startswith("dT")], A.COLORES):
+    if C.SERIE == "tsm":
+        cols, ylab = list(C.AREAS), "TSM promedio (°C)"
+    else:
+        cols, ylab = [c for c in df.columns if c.startswith("dT")], "ΔT costa − ref (°C)"
+    for n, col in zip(cols, A.COLORES):
         a2.plot(df.index, df[n], ".-", color=col, ms=3, lw=0.8, label=n)
     # sombrear noches (00-06 h local) y el evento
     for d in pd.date_range(df.index[0].normalize(), df.index[-1].normalize(), freq="1D"):
@@ -147,17 +154,19 @@ def cuadro_horario(sst2d, lat, lon, t, df, evento, salida):
     a2.axvspan(evento[2], evento[3] + pd.Timedelta("23h"), color="#fdd49e", alpha=0.5,
                zorder=0, label="evento")
     a2.axvline(t, color="k", lw=1.5)
-    a2.set_ylabel("ΔT costa − ref (°C)")
-    a2.legend(fontsize=7, loc="lower left", ncol=3)
-    a2.set_title("gris = noche (00–06 h local); el día trae calentamiento diurno", fontsize=8)
+    a2.set_ylabel(ylab)
+    a2.legend(fontsize=7, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=4, frameon=False)
+    a2.set_xlabel("gris = noche (00–06 h local); de día la superficie se calienta por el sol",
+                  fontsize=8)
     fig.savefig(salida, dpi=DPI)
     plt.close(fig)
 
 
 def animacion_horaria(evento):
     nombre, area, ini, fin, _ = evento
+    fin_anim = min(fin, ini + pd.Timedelta(days=MAX_DIAS_EVENTO_ANIM - 1))
     t0 = ini.normalize() - pd.Timedelta(days=DIAS_ANTES_DESPUES)
-    t1 = fin.normalize() + pd.Timedelta(days=DIAS_ANTES_DESPUES, hours=23)
+    t1 = fin_anim.normalize() + pd.Timedelta(days=DIAS_ANTES_DESPUES, hours=23)
     print(f"\n== {nombre} ({area}): {ini:%Y-%m-%d} a {fin:%Y-%m-%d}; ventana {t0:%m-%d} a {t1:%m-%d}")
     horas = pd.date_range(t0, t1, freq="1h")
     D.descargar(horas)
