@@ -12,12 +12,14 @@ DOMINIO = (-75.5, -70.5, 10.0, 14.0)
 
 # Areas donde se esperan cambios (lon_min, lon_max, lat_min, lat_max)
 AREAS = {
-    # Nucleo de surgencia (Gutierrez Leones et al. 2015, Bol. Cient. CIOH)
-    "Nucleo Guajira": (-72.7, -71.6, 11.7, 12.6),
+    # Nucleo de surgencia al W del Cabo de la Vela, solo mar
+    # (lengua fria < 23 C en los mapas de feb 2023)
+    "Nucleo Guajira": (-72.9, -72.1, 11.8, 12.5),
     # Franja costera occidental Riohacha-Palomino
     "Riohacha": (-73.6, -72.7, 11.2, 11.9),
-    # Referencia oceanica (fuera de la influencia directa de la surgencia)
-    "Referencia oceanica": (-73.0, -72.0, 13.0, 13.6),
+    # Referencia oceanica: al NW, fuera de la lengua y los filamentos frios
+    # (la caja anterior, 73-72 W / 13-13.6 N, quedaba dentro de un filamento)
+    "Referencia oceanica": (-75.0, -74.0, 13.2, 13.9),
 }
 
 # Calidad: DQF == 0 es "good quality" en ABI-L2-SST
@@ -26,6 +28,9 @@ DQF_VALIDOS = (0,)
 # Isolineas
 ISO_INTERVALO = 0.5  # grados C
 TSM_RANGO = (23.0, 28.5)
+
+# Horas nocturnas (UTC) para evitar el calentamiento diurno: 00-06 h local (UTC-5)
+HORAS_NOCHE_UTC = (5, 6, 7, 8, 9, 10)
 
 DATA_DIR = "data"
 FIG_DIR = "figuras"

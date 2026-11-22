@@ -101,7 +101,7 @@ def series(ds):
     for nombre, caja in C.AREAS.items():
         media, frac = media_area(ds, caja)
         tabla[nombre] = media.values
-        tabla[f"{nombre} (frac. valida)"] = frac.values
+        tabla[f"{nombre} (frac. valida)"] = frac.values  # incluye tierra en el denominador
     df = pd.DataFrame(tabla, index=pd.to_datetime(ds.time.values))
     ref = "Referencia oceanica"
     for nombre in C.AREAS:
@@ -118,16 +118,21 @@ def series(ds):
     a1.set_ylabel("TSM media (°C)")
     a1.legend(fontsize=8)
     a1.set_title("TSM horaria (puntos) y media diaria (línea gruesa) por área")
-    for c in [c for c in df.columns if c.startswith("dT")]:
-        a2.plot(df.index, df[c], ".-", ms=3, lw=0.8, label=c)
+    noche = df[df.index.hour.isin(C.HORAS_NOCHE_UTC)].resample("1D").mean()
+    noche.index = noche.index + pd.Timedelta("8h")  # centro de la ventana nocturna (08 UTC)
+    for c, col in zip([c for c in df.columns if c.startswith("dT")], COLORES):
+        a2.plot(df.index, df[c], ".-", color=col, ms=2, lw=0.6, alpha=0.5, label=f"{c} (horario)")
+        a2.plot(noche.index, noche[c], "s-", color=col, lw=2, ms=6,
+                label=f"{c} (noche 00-06 h local)")
     a2.axhline(0, color="k", lw=0.5)
     a2.set_ylabel("ΔT costa − océano (°C)")
-    a2.legend(fontsize=8)
+    a2.legend(fontsize=7, ncol=2)
     a2.set_title("Índice de surgencia por TSM (más negativo = surgencia más intensa)")
     fig.autofmt_xdate()
     fig.savefig(os.path.join(C.FIG_DIR, "series_areas.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
-    return df
+    noche.to_csv(os.path.join(C.FIG_DIR, "series_noche_diaria.csv"), float_format="%.3f")
+    return df, noche
 
 
 def main():
@@ -152,8 +157,12 @@ def main():
         mapa(diario.sel(time=t).values, lat, lon, f"GOES-16 TSM media diaria {ts:%Y-%m-%d}",
              os.path.join(C.FIG_DIR, "diarios", f"mapa_{ts:%Y%m%d}.png"))
 
-    df = series(ds)
-    print(df.resample("1D").mean().round(2).to_string())
+    df, noche = series(ds)
+    cols = [c for c in df.columns if "frac" not in c]
+    print("Media diaria (todas las horas):")
+    print(df[cols].resample("1D").mean().round(2).to_string())
+    print("\nMedia diaria solo noche (00-06 h local):")
+    print(noche[cols].round(2).to_string())
 
 
 if __name__ == "__main__":
