@@ -56,7 +56,7 @@ La descarga corre 8 procesos en paralelo (`DESCARGAS_PARALELAS` en `config.py`) 
 `src/animar.py` (correrlo después de `analizar.py`):
 
 - **Diaria:** `diaria_<inicio>_<fin>.gif`, un cuadro por día del compuesto nocturno.
-- **Horaria, una por cambio relevante:** `horaria_<tipo>_<area>_<fecha>.gif`. Los cambios se toman de `eventos.csv` y de los saltos de ΔT entre días seguidos mayores de 0,4 °C. Primero entran los eventos detectados, ordenados por magnitud. Después entran los saltos cuya ventana no se solape con ningún evento ya elegido. Se dejan como máximo 4.
+- **Horaria, una por cambio relevante:** `horaria_<tipo>_<area>_<fecha>.gif`. Los cambios se toman de `eventos.csv` y de los saltos de la serie diaria entre días seguidos mayores de 0,4 °C. Primero entran los eventos detectados, ordenados por magnitud. Después entran los saltos cuya ventana no se solape con ningún evento ya elegido. Se dejan como máximo 4.
   - Para cada uno se descargan **todas** las horas desde 2 días antes hasta 2 días después del evento.
   - Cada cuadro muestra el mapa de esa hora y, abajo, la TSM promedio horaria de las tres áreas con el instante marcado.
   - En eventos de más de 3 días se anima solo el inicio, que es cuando ocurre el cambio.
