@@ -1,0 +1,4 @@
+data/
+figuras/horarios/
+__pycache__/
+*.nc
