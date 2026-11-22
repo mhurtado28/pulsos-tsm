@@ -66,9 +66,8 @@ def suavizar(campo, n=5):
     return out
 
 
-def mapa(sst2d, lat, lon, titulo, salida):
-    fig = plt.figure(figsize=(9, 7))
-    ax = plt.axes(projection=ccrs.PlateCarree())
+def dibujar_mapa(ax, sst2d, lat, lon, titulo):
+    """Dibuja TSM, isotermas, costa y areas en un eje cartopy."""
     ax.set_extent(C.DOMINIO, crs=ccrs.PlateCarree())
     niveles = np.arange(C.TSM_RANGO[0], C.TSM_RANGO[1] + 1e-6, C.ISO_INTERVALO)
     pc = ax.pcolormesh(lon, lat, sst2d, cmap="RdYlBu_r", vmin=C.TSM_RANGO[0],
@@ -87,10 +86,17 @@ def mapa(sst2d, lat, lon, titulo, salida):
                 transform=ccrs.PlateCarree(), zorder=5)
     gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="0.5")
     gl.top_labels = gl.right_labels = False
-    plt.colorbar(pc, ax=ax, shrink=0.8, label="TSM (°C)")
     valid = np.isfinite(sst2d).mean()
-    ax.set_title(f"{titulo}   (píxeles válidos: {valid:.0%})")
-    fig.savefig(salida, dpi=130, bbox_inches="tight")
+    ax.set_title(f"{titulo}   (píxeles válidos: {valid:.0%})", pad=14)
+    return pc
+
+
+def mapa(sst2d, lat, lon, titulo, salida, dpi=130):
+    fig = plt.figure(figsize=(9, 7))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    pc = dibujar_mapa(ax, sst2d, lat, lon, titulo)
+    plt.colorbar(pc, ax=ax, shrink=0.8, label="TSM (°C)")
+    fig.savefig(salida, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
 

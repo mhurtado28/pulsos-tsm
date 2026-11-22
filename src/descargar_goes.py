@@ -48,13 +48,18 @@ def indices_ventana(ds, dominio):
 
 
 def main():
-    fs = s3fs.S3FileSystem(anon=True)
-    os.makedirs(C.DATA_DIR, exist_ok=True)
     horas = pd.date_range(C.FECHA_INICIO, pd.Timestamp(C.FECHA_FIN) + pd.Timedelta("23h"),
                           freq=f"{C.PASO_HORAS}h")
     if C.HORAS_DESCARGA_UTC is not None:
         horas = horas[horas.hour.isin(C.HORAS_DESCARGA_UTC)]
     print(f"{len(horas)} horas a descargar ({C.FECHA_INICIO} a {C.FECHA_FIN})")
+    descargar(horas)
+
+
+def descargar(horas):
+    """Descarga y recorta las horas dadas (DatetimeIndex UTC); salta las ya bajadas."""
+    fs = s3fs.S3FileSystem(anon=True)
+    os.makedirs(C.DATA_DIR, exist_ok=True)
     ventana = None
     for t in horas:
         salida = os.path.join(C.DATA_DIR, f"sst_{t:%Y%m%d_%H}.nc")

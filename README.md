@@ -38,7 +38,18 @@ python src/descargar_goes.py              # recorta y guarda data/sst_YYYYmmdd_H
 python src/analizar.py                    # mapas diarios + series + eventos
 python src/analizar.py --sin-mapas        # solo series y eventos (rápido)
 python src/analizar.py --horarios         # además un mapa por hora
+python src/animar.py                      # animación diaria + horarias de los cambios relevantes
 ```
+
+## Animaciones (`figuras/animaciones/`)
+
+`src/animar.py` (correrlo después de `analizar.py`):
+
+- **Diaria:** `diaria_<inicio>_<fin>.gif`, un cuadro por día del compuesto nocturno.
+- **Horaria, una por cambio relevante:** `horaria_<tipo>_<area>_<fecha>.gif`. Los cambios se toman de `eventos.csv` y de los saltos de ΔT entre días seguidos mayores de 0,4 °C. Se ordenan por magnitud, se descartan los que se solapan y se dejan como máximo 4.
+  - Para cada uno se descargan **todas** las horas desde 2 días antes hasta 2 días después del evento.
+  - Cada cuadro muestra el mapa de esa hora y, abajo, la serie horaria de ΔT con el instante marcado.
+  - En gris se marcan las horas nocturnas. Durante el día la TSM costera sube por calentamiento diurno, así que las subidas de la tarde no son pulsos.
 
 ## Método
 
