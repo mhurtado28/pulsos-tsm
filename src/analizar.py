@@ -105,15 +105,31 @@ def mapa(sst2d, lat, lon, titulo, salida, dpi=130):
 
 
 def cobertura_y_media(campo, mar, caja, lat, lon):
-    """Media de la caja y fraccion de pixeles de mar con dato."""
+    """Media, percentil 10 de la caja y fraccion de pixeles de mar con dato."""
     lo0, lo1, la0, la1 = caja
     m = (lon >= lo0) & (lon <= lo1) & (lat >= la0) & (lat <= la1) & mar
     v = campo.where(m)
-    return v.mean(("y", "x")).values, (np.isfinite(v).sum(("y", "x")) / m.sum()).values
+    p10 = v.quantile(0.10, dim=("y", "x"), skipna=True).values
+    return v.mean(("y", "x")).values, p10, (np.isfinite(v).sum(("y", "x")) / m.sum()).values
+
+
+def calcular_fondo(serie):
+    """Estado 'normal' contra el que se mide cada dia.
+
+    previo:   mediana de los VENTANA_FONDO_DIAS dias ANTERIORES (no incluye el dia).
+              Detecta cambios respecto al mes previo, incluso relajaciones largas
+              o al final del periodo.
+    centrado: mediana movil centrada (absorbe eventos mas largos que ~media ventana).
+    """
+    w = C.VENTANA_FONDO_DIAS
+    if C.TIPO_FONDO == "previo":
+        return serie.rolling(w, min_periods=7).median().shift(1)
+    return serie.rolling(w, center=True, min_periods=5).median()
 
 
 def detectar(serie, fondo):
-    """Eventos donde la anomalia (serie - fondo) supera +/- UMBRAL_PULSO.
+    """Eventos donde la anomalia (serie - fondo) supera +/- UMBRAL_PULSO durante
+    al menos MIN_DIAS_EVENTO dias.
 
     relajacion:      dT sube (surgencia mas debil que lo normal)
     intensificacion: dT baja (surgencia mas fuerte que lo normal)
@@ -128,6 +144,8 @@ def detectar(serie, fondo):
             if not obs.any():
                 continue
             g = g.loc[obs.idxmax():obs[::-1].idxmax()]
+            if len(g) < C.MIN_DIAS_EVENTO:
+                continue
             eventos.append({
                 "tipo": tipo,
                 "inicio": g.index[0].date(),
@@ -139,53 +157,71 @@ def detectar(serie, fondo):
     return anom, eventos
 
 
+INDICES = {
+    "media": "ΔT media = media(costa) − media(ref)",
+    "p10": "ΔT P10 = percentil 10(costa) − media(ref)  [agua más fría]",
+}
+
+
 def series(diario, lat, lon):
     mar = np.isfinite(diario).any("time")
     tabla = {}
     for nombre, caja in C.AREAS.items():
-        media, cob = cobertura_y_media(diario, mar, caja, lat, lon)
-        tabla[nombre] = media
-        tabla[f"cob {nombre}"] = cob
+        media, p10, cob = cobertura_y_media(diario, mar, caja, lat, lon)
+        tabla[nombre], tabla[f"p10 {nombre}"], tabla[f"cob {nombre}"] = media, p10, cob
     df = pd.DataFrame(tabla, index=pd.to_datetime(diario.time.values))
     ref = "Referencia oceanica"
     costas = [n for n in C.AREAS if n != ref]
     for nombre in C.AREAS:  # control de calidad por cobertura
-        df.loc[df[f"cob {nombre}"] < C.MIN_COBERTURA, nombre] = np.nan
+        malo = df[f"cob {nombre}"] < C.MIN_COBERTURA
+        df.loc[malo, [nombre, f"p10 {nombre}"]] = np.nan
 
     todos = []
     for n in costas:
-        dT = df[n] - df[ref]
-        fondo = dT.rolling(C.VENTANA_FONDO_DIAS, center=True, min_periods=5).median()
-        anom, ev = detectar(dT, fondo)
-        df[f"dT {n}"], df[f"fondo {n}"], df[f"anom {n}"] = dT, fondo, anom
-        todos += [{"area": n, **e} for e in ev]
+        for ind in INDICES:
+            costa = df[n] if ind == "media" else df[f"p10 {n}"]
+            dT = costa - df[ref]
+            fondo = calcular_fondo(dT)
+            anom, ev = detectar(dT, fondo)
+            sfx = "" if ind == "media" else " p10"
+            df[f"dT{sfx} {n}"], df[f"fondo{sfx} {n}"], df[f"anom{sfx} {n}"] = dT, fondo, anom
+            todos += [{"area": n, "indice": ind, **e} for e in ev]
     eventos = pd.DataFrame(todos)
     df.to_csv(os.path.join(C.FIG_DIR, "series_noche_diaria.csv"), float_format="%.3f")
     eventos.to_csv(os.path.join(C.FIG_DIR, "eventos.csv"), index=False)
 
-    fig, axs = plt.subplots(1 + len(costas), 1, figsize=(12, 3.2 * (1 + len(costas))), sharex=True)
+    paneles = [(n, ind) for n in costas for ind in INDICES]
+    fig, axs = plt.subplots(1 + len(paneles), 1, figsize=(12, 2.9 * (1 + len(paneles))),
+                            sharex=True)
     for nombre, col in zip(C.AREAS, COLORES):
-        axs[0].plot(df.index, df[nombre], "o-", color=col, ms=3, lw=1.2, label=nombre)
+        axs[0].plot(df.index, df[nombre], "o-", color=col, ms=3, lw=1.2, label=f"{nombre} (media)")
+        if nombre != ref:
+            axs[0].plot(df.index, df[f"p10 {nombre}"], "--", color=col, lw=1, label=f"{nombre} (P10)")
     axs[0].set_ylabel("TSM (°C)")
-    axs[0].legend(fontsize=8, ncol=3)
+    axs[0].legend(fontsize=7, ncol=3)
     axs[0].set_title("TSM nocturna (00–06 h local), compuesto diario por área")
-    for ax, n, col in zip(axs[1:], costas, COLORES):
-        ax.plot(df.index, df[f"dT {n}"], "o-", color=col, ms=3, lw=1.2, label="ΔT costa − ref")
-        ax.plot(df.index, df[f"fondo {n}"], "k--", lw=1,
-                label=f"fondo (mediana {C.VENTANA_FONDO_DIAS} d)")
-        ax.fill_between(df.index, df[f"fondo {n}"] - C.UMBRAL_PULSO,
-                        df[f"fondo {n}"] + C.UMBRAL_PULSO, color="0.85",
+    nombre_fondo = ("mediana de los %d días previos" if C.TIPO_FONDO == "previo"
+                    else "mediana centrada de %d días") % C.VENTANA_FONDO_DIAS
+    for ax, (n, ind) in zip(axs[1:], paneles):
+        col = COLORES[list(C.AREAS).index(n)]
+        sfx = "" if ind == "media" else " p10"
+        ax.plot(df.index, df[f"dT{sfx} {n}"], "o-" if ind == "media" else "s--", color=col,
+                ms=3, lw=1.2, label=INDICES[ind])
+        ax.plot(df.index, df[f"fondo{sfx} {n}"], "k--", lw=1, label=f"fondo ({nombre_fondo})")
+        ax.fill_between(df.index, df[f"fondo{sfx} {n}"] - C.UMBRAL_PULSO,
+                        df[f"fondo{sfx} {n}"] + C.UMBRAL_PULSO, color="0.85",
                         label=f"± {C.UMBRAL_PULSO} °C")
         if len(eventos):
-            for _, e in eventos[eventos.area == n].iterrows():
+            for _, e in eventos[(eventos.area == n) & (eventos.indice == ind)].iterrows():
                 c = "#f4a582" if e.tipo == "relajacion" else "#92c5de"
                 ax.axvspan(pd.Timestamp(e.inicio) - pd.Timedelta("12h"),
                            pd.Timestamp(e.fin) + pd.Timedelta("12h"), color=c, alpha=0.5)
         ax.set_ylabel("ΔT (°C)")
-        ax.set_title(f"{n}: naranja = relajación, azul = intensificación")
+        ax.set_title(f"{n} – índice {ind}: naranja = relajación, azul = intensificación "
+                     f"(≥ {C.MIN_DIAS_EVENTO} días)", fontsize=10)
         ax.legend(fontsize=7, loc="lower left")
     fig.autofmt_xdate()
-    fig.savefig(os.path.join(C.FIG_DIR, "series_areas.png"), dpi=130, bbox_inches="tight")
+    fig.savefig(os.path.join(C.FIG_DIR, "series_areas.png"), dpi=120, bbox_inches="tight")
     plt.close(fig)
     return df, eventos
 
@@ -228,7 +264,7 @@ def main():
         print("\nEventos detectados:")
         print(eventos.to_string(index=False))
         print("\nResumen por area y tipo (duracion en dias):")
-        print(eventos.groupby(["area", "tipo"])["duracion_dias"]
+        print(eventos.groupby(["area", "indice", "tipo"])["duracion_dias"]
               .agg(["count", "mean", "min", "max"]).round(1).to_string())
     else:
         print("\nNo se detectaron eventos con el umbral actual.")

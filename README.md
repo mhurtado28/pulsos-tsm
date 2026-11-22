@@ -63,11 +63,15 @@ La descarga corre 8 procesos en paralelo (`DESCARGAS_PARALELAS` en `config.py`) 
 
 ## Método
 
-1. **Compuesto nocturno diario:** media por píxel de las horas de 00 a 06 h local.
+1. **Compuesto nocturno diario:** media por píxel de las horas de 00 a 06 h local, solo con píxeles de buena calidad (`DQF = 0`).
 2. **Control de calidad:** si en una caja hay menos de `MIN_COBERTURA` (25%) de píxeles de mar con dato, ese día se descarta. El mar se define como los píxeles que tuvieron dato al menos una vez en el periodo.
-3. **Índice de surgencia:** ΔT = TSM(costa) − TSM(referencia oceánica). Más negativo significa surgencia más intensa.
-4. **Fondo:** mediana móvil centrada de `VENTANA_FONDO_DIAS` (15) días. Representa el estado "normal" de la surgencia.
-5. **Pulsos:** días seguidos en que la anomalía (ΔT − fondo) supera ±`UMBRAL_PULSO` (0,5 °C).
+3. **Dos índices de surgencia por zona costera:**
+   - **media:** ΔT = media(costa) − media(referencia).
+   - **p10:** ΔT = percentil 10(costa) − media(referencia). Representa el agua más fría de la caja, la del núcleo, y depende menos de cuánta agua cálida entre en la caja.
+
+   Más negativo significa surgencia más intensa.
+4. **Fondo:** mediana de los `VENTANA_FONDO_DIAS` (31) días **anteriores**, sin incluir el día (`TIPO_FONDO = "previo"`). Cada día se compara con el estado del mes previo. Así se detectan también relajaciones largas (1–2 semanas) y las que ocurren al final del periodo. Los primeros 7 días del periodo no tienen fondo. La opción `"centrado"` usa una mediana centrada, pero esa absorbe los eventos largos.
+5. **Pulsos:** al menos `MIN_DIAS_EVENTO` (2) días seguidos en que la anomalía (ΔT − fondo) supera ±`UMBRAL_PULSO` (0,5 °C).
    - **Relajación:** ΔT sube; la surgencia se debilita.
    - **Intensificación:** ΔT baja; la surgencia se intensifica.
 
@@ -75,7 +79,7 @@ La descarga corre 8 procesos en paralelo (`DESCARGAS_PARALELAS` en `config.py`) 
 
 ## Salidas (`figuras/<inicio>_<fin>/`)
 
-- `series_areas.png`: TSM nocturna por área y, para cada zona costera, ΔT con su fondo, la banda de ±0,5 °C y los eventos sombreados (naranja = relajación, azul = intensificación).
-- `eventos.csv`: un evento por fila, con área, tipo, inicio, fin, duración en días, anomalía máxima y días interpolados.
+- `series_areas.png`: TSM nocturna por área (media y P10) y, para cada zona costera y cada índice, ΔT con su fondo, la banda de ±0,5 °C y los eventos sombreados (naranja = relajación, azul = intensificación).
+- `eventos.csv`: un evento por fila, con área, índice, tipo, inicio, fin, duración en días, anomalía máxima y días interpolados.
 - `series_noche_diaria.csv`: series diarias, cobertura, fondo y anomalía.
 - `diarios/mapa_*.png`: compuesto nocturno de cada día con isotermas cada 0,5 °C y las áreas. Las isotermas se trazan sobre un campo suavizado 5×5.

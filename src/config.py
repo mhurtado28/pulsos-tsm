@@ -40,7 +40,9 @@ HORAS_DESCARGA_UTC = HORAS_NOCHE_UTC
 MIN_COBERTURA = 0.25
 
 # Deteccion de pulsos sobre dT (costa - referencia), compuesto nocturno diario
-VENTANA_FONDO_DIAS = 15     # mediana movil centrada = estado "normal" de la surgencia
+VENTANA_FONDO_DIAS = 31     # dias usados para el estado "normal" de la surgencia
+TIPO_FONDO = "previo"       # "previo": mediana de los 31 dias anteriores; "centrado"
+MIN_DIAS_EVENTO = 2         # dias seguidos minimos para contar un evento
 UMBRAL_PULSO = 0.5          # grados C de anomalia respecto al fondo
 MAX_HUECO_DIAS = 1          # huecos (nubes) de hasta 1 dia se interpolan para detectar
 

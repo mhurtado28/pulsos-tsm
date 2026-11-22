@@ -87,12 +87,13 @@ def cambios_relevantes():
         ev = pd.read_csv(f_ev, parse_dates=["inicio", "fin"])
         ev = ev.reindex(ev.anomalia_max_C.abs().sort_values(ascending=False).index)
         for _, e in ev.iterrows():
-            cambios.append((f"{e.tipo}_{e.area.split()[0].lower()}", e.area, e.inicio, e.fin,
-                            abs(e.anomalia_max_C)))
+            ind = "" if e.get("indice", "media") == "media" else "_p10"
+            cambios.append((f"{e.tipo}_{e.area.split()[0].lower()}{ind}", e.area, e.inicio,
+                            e.fin, abs(e.anomalia_max_C)))
     f_se = os.path.join(C.FIG_DIR, "series_noche_diaria.csv")
     if os.path.exists(f_se):
         df = pd.read_csv(f_se, index_col=0, parse_dates=True)
-        for col in [c for c in df.columns if c.startswith("dT ")]:
+        for col in [c for c in df.columns if c.startswith("dT ") and "p10" not in c]:
             area = col[3:]
             salto = df[col].diff()
             for t, v in salto[salto.abs() > SALTO_MIN_C].items():
@@ -118,7 +119,7 @@ def series_horarias(ds):
     mar = np.isfinite(ds.sst).any("time")
     tabla = {}
     for nombre, caja in C.AREAS.items():
-        media, cob = A.cobertura_y_media(ds.sst, mar, caja, ds.lat, ds.lon)
+        media, _, cob = A.cobertura_y_media(ds.sst, mar, caja, ds.lat, ds.lon)
         media = np.where(cob >= C.MIN_COBERTURA, media, np.nan)
         tabla[nombre] = media
     df = pd.DataFrame(tabla, index=pd.to_datetime(ds.time.values))
