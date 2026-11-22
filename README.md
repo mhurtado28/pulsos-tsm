@@ -11,6 +11,7 @@ Objetivo: ver si la surgencia ocurre en pulsos cortos y estimar cuánto duran, c
 - **Resolución temporal:** la TSM de nivel 2 se publica cada hora, no hay producto de 30 minutos. Para bajar menos archivos, cambia `PASO_HORAS` en `src/config.py`.
 - **Calidad:** solo se usan los píxeles con `DQF == 0` (buena calidad). Las nubes dejan huecos.
 - **Periodo por defecto:** enero a marzo de 2023 (época seca, con alisios fuertes). Se cambia con `--inicio` y `--fin` en todos los scripts. Cada periodo guarda sus resultados en `figuras/<inicio>_<fin>/`.
+- **2025:** GOES-16 siguió siendo GOES-East hasta el 7 de abril de 2025. Entre el 21 de marzo y el 1 de abril se movió ligeramente (a 75,5° O). La descarga compara la grilla de cada archivo con la del primero y descarta, con aviso, los que no coincidan, para que no queden recortes desplazados.
 - **2018:** GOES-16 ya era GOES-East desde diciembre de 2017, pero su producto de TSM se declaró de madurez provisional apenas el 9 de marzo de 2018 (beta antes de esa fecha). Los datos de enero y febrero de 2018 deben tomarse con más cautela y pueden tener horas faltantes.
 - **Solo noche:** se descargan las horas de 00 a 06 h local (05–10 UTC), unos 354 archivos. Así se evita el calentamiento diurno, que en la tarde sube la TSM costera hasta ~1 °C y se confunde con un pulso. Se cambia con `HORAS_DESCARGA_UTC` en `src/config.py`.
 

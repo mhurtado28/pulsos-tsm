@@ -87,10 +87,14 @@ def _bajar_una(fs, t, ventana):
         archivos = []
     if not archivos:
         return f"[sin archivo] {t}"
-    sy, sx, lat_w, lon_w = ventana
+    sy, sx, lat_w, lon_w, firma = ventana
     try:
         with fs.open(archivos[0], "rb") as f:
             ds = xr.open_dataset(f, engine="h5netcdf")
+            if _firma(ds, sy, sx) != firma:
+                # la grilla cambio (p. ej. reubicacion del satelite): el recorte quedaria
+                # desplazado, asi que el archivo se descarta
+                return f"[grilla distinta, descartado] {t}: {_firma(ds, sy, sx)} != {firma}"
             sub = ds[["SST", "DQF"]].isel(y=sy, x=sx).load()
     except Exception as e:  # archivo corrupto o corte de red: se reintenta en la proxima corrida
         return f"[error] {t}: {e}"
@@ -108,6 +112,13 @@ def _bajar_una(fs, t, ventana):
     return f"[ok] {t}  validos={np.isfinite(sst.values).mean():.0%}"
 
 
+def _firma(ds, sy, sx):
+    """Identifica la grilla: longitud del origen y coordenadas de la esquina del recorte."""
+    lon0 = float(ds["goes_imager_projection"].attrs["longitude_of_projection_origin"])
+    return (round(lon0, 3), ds.sizes["x"], ds.sizes["y"],
+            round(float(ds["x"][sx.start]), 7), round(float(ds["y"][sy.start]), 7))
+
+
 def _ventana(fs, horas):
     """Indices del recorte, calculados con el primer archivo disponible."""
     for t in horas:
@@ -120,7 +131,9 @@ def _ventana(fs, horas):
             with fs.open(archivos[0], "rb") as f:
                 ds = xr.open_dataset(f, engine="h5netcdf")
                 sy, sx, lat, lon = indices_ventana(ds, C.DOMINIO)
-            return sy, sx, lat[sy, sx], lon[sy, sx]
+                firma = _firma(ds, sy, sx)
+            print(f"Grilla de referencia: {firma}")
+            return sy, sx, lat[sy, sx], lon[sy, sx], firma
     return None
 
 
@@ -141,8 +154,13 @@ def descargar(horas):
     with ProcessPoolExecutor(C.DESCARGAS_PARALELAS, initializer=_iniciar_proceso,
                              initargs=(ventana,)) as ex:
         futuros = [ex.submit(_bajar_en_proceso, t) for t in pendientes]
+        distintas = 0
         for i, fut in enumerate(as_completed(futuros), 1):
-            print(f"{i}/{len(pendientes)} {fut.result()}", flush=True)
+            msg = fut.result()
+            distintas += msg.startswith("[grilla distinta")
+            print(f"{i}/{len(pendientes)} {msg}", flush=True)
+    if distintas:
+        print(f"AVISO: {distintas} archivos con una grilla distinta se descartaron.")
 
 
 if __name__ == "__main__":
