@@ -51,7 +51,9 @@ La descarga corre 8 procesos en paralelo (`DESCARGAS_PARALELAS` en `config.py`) 
 
 **Codespace:** un Codespace se apaga solo tras 30 min de inactividad por defecto. Para corridas largas, sube el tiempo en GitHub → Settings → Codespaces → *Default idle timeout* (hasta 240 min).
 
-## Animaciones (`figuras/<periodo>/animaciones/`)
+## Animaciones (`figuras/<periodo>/animaciones_<SERIE>/`)
+
+Las animaciones van en una carpeta según la serie usada: `animaciones_tsm/` (TSM promedio de cada área) o `animaciones_dT/` (diferencia costa − referencia). Así no se sobrescriben entre sí.
 
 `src/animar.py` (correrlo después de `analizar.py`):
 

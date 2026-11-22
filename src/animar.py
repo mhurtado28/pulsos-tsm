@@ -47,7 +47,8 @@ DPI_DIARIO = 110
 
 
 def anim_dir():
-    return os.path.join(C.FIG_DIR, "animaciones")
+    """Una carpeta por tipo de serie, para no sobrescribir las de la otra."""
+    return os.path.join(C.FIG_DIR, f"animaciones_{C.SERIE}")
 
 
 def gif(cuadros, salida, ms):
