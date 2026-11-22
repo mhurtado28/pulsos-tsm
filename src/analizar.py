@@ -40,9 +40,13 @@ COLORES = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd", "#ff7f0e"]
 
 
 def cargar():
-    archivos = sorted(glob.glob(os.path.join(C.DATA_DIR, "sst_*.nc")))
+    t0 = pd.Timestamp(C.FECHA_INICIO)
+    t1 = pd.Timestamp(C.FECHA_FIN) + pd.Timedelta("23h")
+    archivos = [a for a in sorted(glob.glob(os.path.join(C.DATA_DIR, "sst_*.nc")))
+                if t0 <= pd.to_datetime(os.path.basename(a)[4:15], format="%Y%m%d_%H") <= t1]
     if not archivos:
-        sys.exit("No hay datos en data/. Corre primero src/descargar_goes.py")
+        sys.exit(f"No hay datos del periodo en data/. Corre primero src/descargar_goes.py "
+                 f"--inicio {C.FECHA_INICIO} --fin {C.FECHA_FIN}")
     primeros = xr.load_dataset(archivos[0])
     primeros = primeros.drop_vars("time")
     lat, lon = primeros["lat"], primeros["lon"]
@@ -191,7 +195,9 @@ def main():
     ap.add_argument("--horarios", action="store_true", help="tambien un mapa por cada hora")
     ap.add_argument("--sin-mapas", action="store_true", help="solo series y eventos")
     ap.add_argument("--sin-horarios", action="store_true", help=argparse.SUPPRESS)
+    C.agregar_args_periodo(ap)
     args = ap.parse_args()
+    C.aplicar_periodo(args)
 
     ds = cargar()
     ds = ds.sel(time=pd.to_datetime(ds.time.values).hour.isin(C.HORAS_NOCHE_UTC))

@@ -5,7 +5,7 @@
    las horas de la ventana (no solo la noche) y muestra el mapa hora a hora junto
    con la serie horaria de dT costa - referencia.
 
-Cambios relevantes (por orden de importancia, maximo N_EVENTOS_HORARIOS):
+Cambios relevantes (maximo N_EVENTOS_HORARIOS, sin ventanas solapadas):
   - eventos de figuras/eventos.csv (relajacion / intensificacion, de analizar.py)
   - saltos de dT de un dia al siguiente mayores que SALTO_MIN_C en
     figuras/series_noche_diaria.csv
@@ -15,6 +15,7 @@ Uso:
     python src/animar.py              # diaria + horarias
     python src/animar.py --solo-diaria
     python src/animar.py --solo-horaria
+    python src/animar.py --inicio 2018-01-01 --fin 2018-03-31
 """
 import argparse
 import os
@@ -35,13 +36,17 @@ import analizar as A  # noqa: E402
 import config as C  # noqa: E402
 import descargar_goes as D  # noqa: E402
 
-ANIM_DIR = os.path.join(C.FIG_DIR, "animaciones")
 N_EVENTOS_HORARIOS = 4      # maximo de animaciones horarias
 DIAS_ANTES_DESPUES = 2      # dias de contexto alrededor de cada evento
 SALTO_MIN_C = 0.4           # salto diario minimo de dT para contar como cambio relevante
 MS_DIARIO = 600             # milisegundos por cuadro
 MS_HORARIO = 250
 DPI = 72
+DPI_DIARIO = 110
+
+
+def anim_dir():
+    return os.path.join(C.FIG_DIR, "animaciones")
 
 
 def gif(cuadros, salida, ms):
@@ -60,16 +65,16 @@ def animacion_diaria():
     ds = A.cargar()
     ds = ds.sel(time=pd.to_datetime(ds.time.values).hour.isin(C.HORAS_NOCHE_UTC))
     diario = ds.sst.resample(time="1D").mean()
-    tmp = os.path.join(ANIM_DIR, "_cuadros_diaria")
+    tmp = os.path.join(anim_dir(), "_cuadros_diaria")
     os.makedirs(tmp, exist_ok=True)
     cuadros = []
     for t in diario.time.values:
         ts = pd.Timestamp(t)
         f = os.path.join(tmp, f"{ts:%Y%m%d}.png")
         A.mapa(diario.sel(time=t).values, ds.lat.values, ds.lon.values,
-               f"TSM nocturna {ts:%Y-%m-%d}", f, dpi=DPI)
+               f"TSM nocturna {ts:%Y-%m-%d}", f, dpi=DPI_DIARIO)
         cuadros.append(f)
-    gif(cuadros, os.path.join(ANIM_DIR, f"diaria_{C.FECHA_INICIO}_{C.FECHA_FIN}.gif"), MS_DIARIO)
+    gif(cuadros, os.path.join(anim_dir(), f"diaria_{C.FECHA_INICIO}_{C.FECHA_FIN}.gif"), MS_DIARIO)
     shutil.rmtree(tmp)
 
 
@@ -94,14 +99,17 @@ def cambios_relevantes():
                 tipo = "salto_relajacion" if v > 0 else "salto_intensificacion"
                 cambios.append((f"{tipo}_{area.split()[0].lower()}", area,
                                 t - pd.Timedelta("1D"), t, abs(v)))
-    # quitar cambios que se solapan con uno mas importante (misma area o no)
+    # primero los eventos detectados, luego los saltos; se descarta todo cambio cuya
+    # ventana se solape (+/- DIAS_ANTES_DESPUES) con uno ya elegido
+    margen = pd.Timedelta(days=DIAS_ANTES_DESPUES)
+    eventos = sorted([c for c in cambios if not c[0].startswith("salto")], key=lambda c: -c[4])
+    saltos = sorted([c for c in cambios if c[0].startswith("salto")], key=lambda c: -c[4])
     elegidos = []
-    for c in sorted(cambios, key=lambda c: -c[4]):
-        if all(c[3] < e[2] - pd.Timedelta("1D") or c[2] > e[3] + pd.Timedelta("1D")
-               for e in elegidos):
-            elegidos.append(c)
+    for c in eventos + saltos:
         if len(elegidos) == N_EVENTOS_HORARIOS:
             break
+        if all(c[3] + margen < e[2] or c[2] - margen > e[3] for e in elegidos):
+            elegidos.append(c)
     return elegidos
 
 
@@ -155,7 +163,7 @@ def animacion_horaria(evento):
     ds = A.cargar()
     ds = ds.sel(time=(ds.time >= np.datetime64(t0)) & (ds.time <= np.datetime64(t1)))
     df = series_horarias(ds)
-    tmp = os.path.join(ANIM_DIR, f"_cuadros_{nombre}")
+    tmp = os.path.join(anim_dir(), f"_cuadros_{nombre}")
     os.makedirs(tmp, exist_ok=True)
     cuadros = []
     for t in ds.time.values:
@@ -163,7 +171,7 @@ def animacion_horaria(evento):
         f = os.path.join(tmp, f"{ts:%Y%m%d_%H}.png")
         cuadro_horario(ds.sst.sel(time=t).values, ds.lat.values, ds.lon.values, ts, df, evento, f)
         cuadros.append(f)
-    gif(cuadros, os.path.join(ANIM_DIR, f"horaria_{nombre}_{ini:%Y%m%d}.gif"), MS_HORARIO)
+    gif(cuadros, os.path.join(anim_dir(), f"horaria_{nombre}_{ini:%Y%m%d}.gif"), MS_HORARIO)
     shutil.rmtree(tmp)
 
 
@@ -171,8 +179,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--solo-diaria", action="store_true")
     ap.add_argument("--solo-horaria", action="store_true")
+    C.agregar_args_periodo(ap)
     args = ap.parse_args()
-    os.makedirs(ANIM_DIR, exist_ok=True)
+    C.aplicar_periodo(args)
+    os.makedirs(anim_dir(), exist_ok=True)
 
     if not args.solo_horaria:
         animacion_diaria()

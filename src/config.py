@@ -1,8 +1,9 @@
 """Configuracion comun: periodo, dominio y areas de analisis."""
 
-# Enero-febrero 2023 (epoca seca, alisios fuertes -> surgencia activa)
+# Periodo por defecto: enero-marzo 2023 (epoca seca, alisios fuertes).
+# Se cambia por linea de comandos en todos los scripts: --inicio 2018-01-01 --fin 2018-03-31
 FECHA_INICIO = "2023-01-01"
-FECHA_FIN = "2023-02-28"          # inclusive
+FECHA_FIN = "2023-03-31"          # inclusive
 SATELITE = "goes16"              # GOES-East en 2023 (GOES-19 se lanzo en 2024)
 PRODUCTO = "ABI-L2-SSTF"         # TSM Full Disk, horaria, ~2 km
 PASO_HORAS = 1                   # 1 = todas las horas; 2 o 3 para bajar menos
@@ -43,5 +44,22 @@ VENTANA_FONDO_DIAS = 15     # mediana movil centrada = estado "normal" de la sur
 UMBRAL_PULSO = 0.5          # grados C de anomalia respecto al fondo
 MAX_HUECO_DIAS = 1          # huecos (nubes) de hasta 1 dia se interpolan para detectar
 
-DATA_DIR = "data"
-FIG_DIR = "figuras"
+DATA_DIR = "data"                 # comun a todos los periodos (archivos por fecha y hora)
+FIG_BASE = "figuras"
+FIG_DIR = f"{FIG_BASE}/{FECHA_INICIO}_{FECHA_FIN}"   # salidas separadas por periodo
+DESCARGAS_PARALELAS = 8
+
+
+def agregar_args_periodo(ap):
+    ap.add_argument("--inicio", default=FECHA_INICIO, help="AAAA-MM-DD")
+    ap.add_argument("--fin", default=FECHA_FIN, help="AAAA-MM-DD (inclusive)")
+
+
+def aplicar_periodo(args):
+    """Fija el periodo y la carpeta de salida figuras/<inicio>_<fin>/."""
+    global FECHA_INICIO, FECHA_FIN, FIG_DIR
+    FECHA_INICIO, FECHA_FIN = args.inicio, args.fin
+    FIG_DIR = f"{FIG_BASE}/{FECHA_INICIO}_{FECHA_FIN}"
+    import os
+    os.makedirs(FIG_DIR, exist_ok=True)
+    print(f"Periodo {FECHA_INICIO} a {FECHA_FIN}  ->  {FIG_DIR}/")

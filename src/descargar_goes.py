@@ -48,49 +48,101 @@ def indices_ventana(ds, dominio):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    C.agregar_args_periodo(ap)
+    ap.add_argument("--todas-las-horas", action="store_true",
+                    help="descarga las 24 h (por defecto solo HORAS_DESCARGA_UTC)")
+    args = ap.parse_args()
+    C.aplicar_periodo(args)
     horas = pd.date_range(C.FECHA_INICIO, pd.Timestamp(C.FECHA_FIN) + pd.Timedelta("23h"),
                           freq=f"{C.PASO_HORAS}h")
-    if C.HORAS_DESCARGA_UTC is not None:
+    if C.HORAS_DESCARGA_UTC is not None and not args.todas_las_horas:
         horas = horas[horas.hour.isin(C.HORAS_DESCARGA_UTC)]
-    print(f"{len(horas)} horas a descargar ({C.FECHA_INICIO} a {C.FECHA_FIN})")
     descargar(horas)
 
 
-def descargar(horas):
-    """Descarga y recorta las horas dadas (DatetimeIndex UTC); salta las ya bajadas."""
-    fs = s3fs.S3FileSystem(anon=True)
-    os.makedirs(C.DATA_DIR, exist_ok=True)
-    ventana = None
+_FS = None
+_VENTANA = None
+
+
+def _iniciar_proceso(ventana):
+    """Cada proceso tiene su propia conexion S3 (HDF5 no es seguro entre hilos)."""
+    global _FS, _VENTANA
+    _FS = s3fs.S3FileSystem(anon=True, skip_instance_cache=True)
+    _VENTANA = ventana
+
+
+def _bajar_en_proceso(t):
+    return _bajar_una(_FS, t, _VENTANA)
+
+
+def _bajar_una(fs, t, ventana):
+    """Descarga y guarda una hora. Devuelve un mensaje."""
+    salida = os.path.join(C.DATA_DIR, f"sst_{t:%Y%m%d_%H}.nc")
+    prefijo = f"noaa-{C.SATELITE}/{C.PRODUCTO}/{t:%Y}/{t:%j}/{t:%H}/"
+    try:
+        archivos = sorted(fs.ls(prefijo))
+    except FileNotFoundError:
+        archivos = []
+    if not archivos:
+        return f"[sin archivo] {t}"
+    sy, sx, lat_w, lon_w = ventana
+    try:
+        with fs.open(archivos[0], "rb") as f:
+            ds = xr.open_dataset(f, engine="h5netcdf")
+            sub = ds[["SST", "DQF"]].isel(y=sy, x=sx).load()
+    except Exception as e:  # archivo corrupto o corte de red: se reintenta en la proxima corrida
+        return f"[error] {t}: {e}"
+    sst = sub["SST"].where(np.isin(sub["DQF"], C.DQF_VALIDOS)) - 273.15
+    out = xr.Dataset(
+        {"sst": (("y", "x"), sst.values.astype("float32"), {"units": "degC"}),
+         "dqf": (("y", "x"), sub["DQF"].values.astype("int8"))},
+        coords={"lat": (("y", "x"), lat_w.astype("float32")),
+                "lon": (("y", "x"), lon_w.astype("float32")),
+                "time": t},
+        attrs={"fuente": archivos[0], "producto": C.PRODUCTO},
+    )
+    out.to_netcdf(salida + ".tmp")
+    os.replace(salida + ".tmp", salida)
+    return f"[ok] {t}  validos={np.isfinite(sst.values).mean():.0%}"
+
+
+def _ventana(fs, horas):
+    """Indices del recorte, calculados con el primer archivo disponible."""
     for t in horas:
-        salida = os.path.join(C.DATA_DIR, f"sst_{t:%Y%m%d_%H}.nc")
-        if os.path.exists(salida):
-            continue
         prefijo = f"noaa-{C.SATELITE}/{C.PRODUCTO}/{t:%Y}/{t:%j}/{t:%H}/"
         try:
             archivos = sorted(fs.ls(prefijo))
         except FileNotFoundError:
-            archivos = []
-        if not archivos:
-            print(f"[sin archivo] {t}")
             continue
-        with fs.open(archivos[0], "rb") as f:
-            ds = xr.open_dataset(f, engine="h5netcdf")
-            if ventana is None:
+        if archivos:
+            with fs.open(archivos[0], "rb") as f:
+                ds = xr.open_dataset(f, engine="h5netcdf")
                 sy, sx, lat, lon = indices_ventana(ds, C.DOMINIO)
-                ventana = (sy, sx, lat[sy, sx], lon[sy, sx])
-            sy, sx, lat_w, lon_w = ventana
-            sub = ds[["SST", "DQF"]].isel(y=sy, x=sx).load()
-        sst = sub["SST"].where(np.isin(sub["DQF"], C.DQF_VALIDOS)) - 273.15
-        out = xr.Dataset(
-            {"sst": (("y", "x"), sst.values.astype("float32"), {"units": "degC"}),
-             "dqf": (("y", "x"), sub["DQF"].values.astype("int8"))},
-            coords={"lat": (("y", "x"), lat_w.astype("float32")),
-                    "lon": (("y", "x"), lon_w.astype("float32")),
-                    "time": t},
-            attrs={"fuente": archivos[0], "producto": C.PRODUCTO},
-        )
-        out.to_netcdf(salida)
-        print(f"[ok] {t}  validos={np.isfinite(sst.values).mean():.0%}")
+            return sy, sx, lat[sy, sx], lon[sy, sx]
+    return None
+
+
+def descargar(horas):
+    """Descarga y recorta las horas dadas (DatetimeIndex UTC); salta las ya bajadas."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    os.makedirs(C.DATA_DIR, exist_ok=True)
+    pendientes = [t for t in horas
+                  if not os.path.exists(os.path.join(C.DATA_DIR, f"sst_{t:%Y%m%d_%H}.nc"))]
+    print(f"{len(horas)} horas en el periodo, {len(pendientes)} por descargar")
+    if not pendientes:
+        return
+    fs = s3fs.S3FileSystem(anon=True)
+    ventana = _ventana(fs, pendientes)
+    if ventana is None:
+        print("No se encontraron archivos en el bucket para estas horas")
+        return
+    with ProcessPoolExecutor(C.DESCARGAS_PARALELAS, initializer=_iniciar_proceso,
+                             initargs=(ventana,)) as ex:
+        futuros = [ex.submit(_bajar_en_proceso, t) for t in pendientes]
+        for i, fut in enumerate(as_completed(futuros), 1):
+            print(f"{i}/{len(pendientes)} {fut.result()}", flush=True)
 
 
 if __name__ == "__main__":
