@@ -155,6 +155,7 @@ def cuadro_horario(sst2d, lat, lon, t, df, evento, salida):
     a2.axvspan(evento[2], evento[3] + pd.Timedelta("23h"), color="#fdd49e", alpha=0.5,
                zorder=0, label="evento")
     a2.axvline(t, color="k", lw=1.5)
+    a2.set_xlim(df.index[0], df.index[-1])   # solo la ventana animada
     a2.set_ylabel(ylab)
     a2.legend(fontsize=7, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=4, frameon=False)
     a2.set_xlabel("gris = noche (00–06 h local); de día la superficie se calienta por el sol",

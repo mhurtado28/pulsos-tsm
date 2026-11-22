@@ -57,6 +57,7 @@ def cargar():
         t = da["time"].values
         sst.append(da.drop_vars(["lat", "lon", "time"]).expand_dims(time=[t]))
     ds = xr.concat(sst, dim="time").to_dataset(name="sst")
+    ds["sst"] = ds.sst.where((ds.sst >= C.TSM_MIN_VALIDA) & (ds.sst <= C.TSM_MAX_VALIDA))
     return ds.assign_coords(lat=lat, lon=lon)
 
 

@@ -25,6 +25,9 @@ AREAS = {
 
 # Calidad: DQF == 0 es "good quality" en ABI-L2-SST
 DQF_VALIDOS = (0,)
+# Rango fisico de TSM en la zona: fuera de el son bordes de nube mal enmascarados
+TSM_MIN_VALIDA = 20.0
+TSM_MAX_VALIDA = 32.0
 
 # Isolineas
 ISO_INTERVALO = 0.5  # grados C
